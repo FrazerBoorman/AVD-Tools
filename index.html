@@ -204,8 +204,9 @@
           <button id="copyBtn" type="button">Copy simplified text</button>
         </div>
         <div class="small-note">
-          Uses your OpenAI key from <code>localStorage['avd_job_report_openai_key']</code>.  
-          Set it once in browser devtools: <code>localStorage.setItem('avd_job_report_openai_key','sk-...')</code>
+          Uses your OpenAI key from <code>localStorage['avd_job_report_openai_key']</code>.<br>
+          Set it once in browser devtools:<br>
+          <code>localStorage.setItem('avd_job_report_openai_key','sk-...')</code>
         </div>
 
         <div style="margin-top:10px;">
@@ -239,14 +240,7 @@
       el.textContent = msg || "";
       el.className = isError ? "danger" : "";
     }
-    function escapeHtml(str) {
-      return String(str || "")
-        .replace(/&/g,"&amp;")
-        .replace(/</g,"&lt;")
-        .replace(/>/g,"&gt;");
-    }
 
-    // Google Calendar helpers
     function getEventStartDate(ev) {
       if (!ev || !ev.start) return null;
       if (ev.start.date) return new Date(ev.start.date + "T00:00:00Z");
@@ -311,50 +305,55 @@
       url.searchParams.set("timeMax", end.toISOString());
       url.searchParams.set("maxResults","250");
 
-      const res = await fetch(url.toString(), {
-        headers: { "Authorization":"Bearer " + accessToken }
-      });
-      if (!res.ok) {
-        setStatus("Calendar API error " + res.status, true);
-        return;
+      try {
+        const res = await fetch(url.toString(), {
+          headers: { "Authorization":"Bearer " + accessToken }
+        });
+        if (!res.ok) {
+          setStatus("Calendar API error " + res.status, true);
+          return;
+        }
+        const data = await res.json();
+        const items = data.items || [];
+        const nowRef = new Date();
+
+        const processed = items
+          .map(ev => ({ ev, startDate: getEventStartDate(ev) }))
+          .filter(obj => obj.startDate && obj.startDate <= nowRef)
+          .sort((a,b) => b.startDate - a.startDate);
+
+        currentEvents = processed.map(x => x.ev);
+
+        const sel = document.getElementById("eventSelect");
+        sel.innerHTML = "";
+        if (!currentEvents.length) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No events in last 14 days.";
+          sel.appendChild(opt);
+          setStatus("No recent events found.", false);
+          return;
+        }
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "— Select event —";
+        sel.appendChild(placeholder);
+
+        currentEvents.forEach((ev, idx) => {
+          const title = ev.summary || "(no title)";
+          const d = extractEventDate(ev);
+          const opt = document.createElement("option");
+          opt.value = String(idx);
+          opt.textContent = (d ? (d + " – ") : "") + title;
+          sel.appendChild(opt);
+        });
+
+        setStatus("Loaded " + currentEvents.length + " events.", false);
+      } catch (e) {
+        console.error(e);
+        setStatus("Error loading events: " + e.message, true);
       }
-      const data = await res.json();
-      const items = data.items || [];
-      const nowRef = new Date();
-
-      const processed = items
-        .map(ev => ({ ev, startDate: getEventStartDate(ev) }))
-        .filter(obj => obj.startDate && obj.startDate <= nowRef)
-        .sort((a,b) => b.startDate - a.startDate);
-
-      currentEvents = processed.map(x => x.ev);
-
-      const sel = document.getElementById("eventSelect");
-      sel.innerHTML = "";
-      if (!currentEvents.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "No events in last 14 days.";
-        sel.appendChild(opt);
-        setStatus("No recent events found.", false);
-        return;
-      }
-
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = "— Select event —";
-      sel.appendChild(placeholder);
-
-      currentEvents.forEach((ev, idx) => {
-        const title = ev.summary || "(no title)";
-        const d = extractEventDate(ev);
-        const opt = document.createElement("option");
-        opt.value = String(idx);
-        opt.textContent = (d ? (d + " – ") : "") + title;
-        sel.appendChild(opt);
-      });
-
-      setStatus("Loaded " + currentEvents.length + " events.", false);
     }
 
     function fillFromSelectedEvent() {
@@ -371,7 +370,6 @@
       setStatus("Loaded event details into original fields.", false);
     }
 
-    // OpenAI
     function getOpenAIKeyOrThrow() {
       const key = localStorage.getItem(OPENAI_KEY_STORAGE);
       if (!key) {
@@ -412,7 +410,7 @@
           "- A single simplified description (1–3 short paragraphs and/or a few bullet points).\n" +
           "- Do NOT add commentary or labels like 'Summary:' – just the cleaned-up text.";
 
-        const res = await fetch("https://api.openai.com/v1/responses", {
+        const res = await fetch("https://api.openai.com/v1/chat/completions", {
           method:"POST",
           headers:{
             "Content-Type":"application/json",
@@ -420,7 +418,7 @@
           },
           body: JSON.stringify({
             model: TEXT_MODEL,
-            input: [
+            messages: [
               { role:"system", content: systemPrompt },
               { role:"user", content: combined }
             ]
@@ -432,17 +430,13 @@
           throw new Error("OpenAI error " + res.status + ": " + txt);
         }
         const data = await res.json();
-        let outText = "";
-        if (
-          data.output &&
-          data.output[0] &&
-          data.output[0].content &&
-          data.output[0].content[0] &&
-          data.output[0].content[0].text
-        ) {
-          outText = data.output[0].content[0].text;
-        } else {
-          throw new Error("Unexpected OpenAI response shape.");
+        const choice = data.choices && data.choices[0];
+        const outText = choice && choice.message && choice.message.content
+          ? choice.message.content
+          : "";
+
+        if (!outText) {
+          throw new Error("OpenAI returned an empty response.");
         }
 
         document.getElementById("simplifiedText").value = outText;
@@ -469,7 +463,6 @@
       }
     }
 
-    // Init
     window.addEventListener("DOMContentLoaded", () => {
       document.getElementById("signinBtn").addEventListener("click", signInManual);
       document.getElementById("simplifyBtn").addEventListener("click", simplifyDescription);
@@ -477,7 +470,6 @@
       document.getElementById("eventSelect").addEventListener("change", fillFromSelectedEvent);
 
       setStatus("Waiting for sign-in…", false);
-      // prepare Google auth
       setTimeout(() => { try { initAuth(); } catch(e){} }, 0);
     });
   </script>
