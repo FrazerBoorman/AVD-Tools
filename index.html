@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Job Description Simplifier</title>
+  <title>Job Description Simplifier v0.1</title>
   <meta name="color-scheme" content="light dark" />
   <!-- Google OAuth client ID -->
   <meta name="google-oauth-client-id"
@@ -47,16 +47,37 @@
       box-shadow:0 18px 40px rgba(15,23,42,0.45);
     }
     h1 {
-      margin:0 0 4px;
+      margin:0;
       font-size:24px;
       letter-spacing:.02em;
+      display:flex;
+      align-items:baseline;
+      gap:8px;
+    }
+    .version-tag {
+      font-size:11px;
+      font-weight:600;
+      color:var(--muted);
+      padding:2px 6px;
+      border-radius:999px;
+      border:1px solid var(--border);
     }
     .muted { color:var(--muted); font-size:14px; }
-    .pill {
-      display:inline-flex;align-items:center;gap:6px;
-      font-size:11px;padding:3px 9px;border-radius:999px;
-      border:1px solid var(--border);color:var(--muted);
+
+    .pill-btn {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      font-size:11px;
+      padding:3px 9px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      color:var(--muted);
+      background:transparent;
+      cursor:pointer;
+      text-decoration:none;
     }
+
     .section {
       margin-top:14px;
       padding:12px;
@@ -124,6 +145,24 @@
     .small-note { font-size:11px;color:var(--muted);margin-top:3px; }
     #status, #aiStatus { font-size:12px;color:var(--muted);margin-top:4px; }
     .danger { color:var(--danger); }
+
+    details.debug-panel summary {
+      cursor:pointer;
+      font-size:12px;
+      color:var(--muted);
+      margin-top:4px;
+    }
+    #debugOutput {
+      margin-top:6px;
+      max-height:200px;
+      overflow:auto;
+      background:var(--panel);
+      border-radius:10px;
+      border:1px solid var(--border);
+      padding:6px;
+      font-size:11px;
+      white-space:pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -131,12 +170,38 @@
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
         <div>
-          <h1>Job Description Simplifier</h1>
+          <h1>
+            Job Description Simplifier
+            <span class="version-tag">v0.1</span>
+          </h1>
           <div class="muted">
             Pick an event or paste text, then get a shorter, clearer description that doesn’t lose critical details.
           </div>
         </div>
-        <span class="pill">Frazer · AVD Tools</span>
+        <button class="pill-btn" type="button"
+                onclick="window.location.href='https://frazerboorman.github.io/';">
+          Frazer · AVD Tools
+        </button>
+      </div>
+
+      <!-- STEP 0 – OpenAI API key -->
+      <div class="section">
+        <div class="section-title">Step 0 – OpenAI API key (stored locally)</div>
+        <div class="grid">
+          <div>
+            <label for="apiKeyInput">OpenAI API key</label>
+            <input id="apiKeyInput" type="password" autocomplete="off"
+                   placeholder="sk-..." />
+            <div class="small-note">
+              Stored only in this browser via <code>localStorage</code>. Used by the simplifier.
+            </div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button id="saveKeyBtn" type="button">Save key</button>
+          <button id="clearKeyBtn" type="button">Clear key</button>
+        </div>
+        <div id="apiKeyStatus" class="small-note"></div>
       </div>
 
       <!-- STEP 1 – Calendar selection -->
@@ -195,9 +260,7 @@
           <button id="copyBtn" type="button">Copy simplified text</button>
         </div>
         <div class="small-note">
-          Uses your OpenAI key from <code>localStorage['avd_job_report_openai_key']</code>.<br>
-          Set it once in browser devtools:<br>
-          <code>localStorage.setItem('avd_job_report_openai_key','sk-...')</code>
+          Uses the OpenAI key saved above. You only need to set it once per device.
         </div>
 
         <div style="margin-top:10px;">
@@ -206,30 +269,64 @@
             placeholder="AI output will appear here. You can tweak it before copying into the calendar."></textarea>
         </div>
       </div>
+
+      <!-- DEBUG PANEL -->
+      <div class="section">
+        <details class="debug-panel">
+          <summary>Debug log (errors / API responses)</summary>
+          <pre id="debugOutput">Debug log initialised…</pre>
+        </details>
+      </div>
     </div>
   </div>
 
   <script>
     const CLIENT_ID = "105230737516-l8tlnck4idde83pjetrotobpt8borvts.apps.googleusercontent.com";
     const SCOPES   = "https://www.googleapis.com/auth/calendar.readonly";
-    const OPENAI_KEY_STORAGE = "avd_job_report_openai_key";
-    const TEXT_MODEL = "gpt-4o-mini"; // IMPORTANT: chat-completions-capable model
+    const OPENAI_KEY_STORAGE = "avd_job_report_openai_key"; // shared with other tools
+    const TEXT_MODEL = "gpt-4o-mini"; // chat-completions-capable model
 
     let tokenClient = null;
     let accessToken = null;
     let currentEvents = [];
+
+    function debugLog(msg, data) {
+      const el = document.getElementById("debugOutput");
+      if (!el) return;
+      const ts = new Date().toISOString();
+      let line = "[" + ts + "] " + msg;
+      if (data !== undefined) {
+        try {
+          line += " " + JSON.stringify(data);
+        } catch {
+          line += " " + String(data);
+        }
+      }
+      el.textContent += "\n" + line;
+      el.scrollTop = el.scrollHeight;
+    }
 
     function setStatus(msg, isError) {
       const el = document.getElementById("status");
       if (!el) return;
       el.textContent = "Status: " + msg;
       el.className = isError ? "danger" : "";
+      debugLog("STATUS: " + msg + (isError ? " [ERROR]" : ""));
     }
     function setAiStatus(msg, isError) {
       const el = document.getElementById("aiStatus");
       if (!el) return;
       el.textContent = msg || "";
       el.className = isError ? "danger" : "";
+      if (msg) debugLog("AI: " + msg + (isError ? " [ERROR]" : ""));
+    }
+
+    function setApiKeyStatus(msg, isError) {
+      const el = document.getElementById("apiKeyStatus");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.style.color = isError ? "var(--danger)" : "var(--muted)";
+      if (msg) debugLog("APIKEY: " + msg + (isError ? " [ERROR]" : ""));
     }
 
     function getEventStartDate(ev) {
@@ -246,12 +343,17 @@
     }
 
     function initAuth() {
-      if (!window.google || !google.accounts || !google.accounts.oauth2) return;
+      debugLog("Initialising Google auth…");
+      if (!window.google || !google.accounts || !google.accounts.oauth2) {
+        debugLog("Google accounts OAuth2 not available.");
+        return;
+      }
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
         prompt: "",
         callback: (resp) => {
+          debugLog("Google OAuth callback received", resp);
           if (resp && resp.access_token) {
             accessToken = resp.access_token;
             setStatus("Signed in. Loading events…", false);
@@ -264,6 +366,7 @@
     }
 
     function signInManual() {
+      debugLog("Sign-in button clicked.");
       if (!tokenClient) initAuth();
       if (!tokenClient) {
         setStatus("Google auth not ready.", true);
@@ -278,6 +381,8 @@
         return;
       }
       const calId = (document.getElementById("calendarId").value || "primary").trim();
+      debugLog("Loading recent events for calendar", calId);
+
       const now = new Date();
       const end = new Date(now);
       end.setHours(23,59,59,999);
@@ -300,11 +405,16 @@
         const res = await fetch(url.toString(), {
           headers: { "Authorization":"Bearer " + accessToken }
         });
+        debugLog("Calendar fetch response status", res.status);
         if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          debugLog("Calendar fetch error body", txt);
           setStatus("Calendar API error " + res.status, true);
           return;
         }
         const data = await res.json();
+        debugLog("Calendar events raw", { count: (data.items || []).length });
+
         const items = data.items || [];
         const nowRef = new Date();
 
@@ -343,6 +453,7 @@
         setStatus("Loaded " + currentEvents.length + " events.", false);
       } catch (e) {
         console.error(e);
+        debugLog("Error loading events", { error: e.message || String(e) });
         setStatus("Error loading events: " + e.message, true);
       }
     }
@@ -352,6 +463,8 @@
       if (!sel.value) return;
       const ev = currentEvents[Number(sel.value)];
       if (!ev) return;
+      debugLog("Event selected", { title: ev.summary || "", id: ev.id });
+
       document.getElementById("originalTitle").value = ev.summary || "";
       const bits = [];
       if (ev.description) bits.push(ev.description);
@@ -364,7 +477,8 @@
     function getOpenAIKeyOrThrow() {
       const key = localStorage.getItem(OPENAI_KEY_STORAGE);
       if (!key) {
-        throw new Error("No OpenAI API key found in localStorage['" + OPENAI_KEY_STORAGE + "'].");
+        debugLog("OpenAI key missing in localStorage", OPENAI_KEY_STORAGE);
+        throw new Error("No OpenAI API key found. Save it in Step 0.");
       }
       return key;
     }
@@ -379,6 +493,7 @@
       }
 
       const combined = "Title: " + title + "\n\nDetails:\n" + text;
+      debugLog("Simplify called", { titleLength: title.length, textLength: text.length });
 
       document.getElementById("simplifyBtn").disabled = true;
       setAiStatus("Talking to OpenAI…", false);
@@ -416,18 +531,25 @@
           })
         });
 
+        debugLog("OpenAI response status", res.status);
+
         if (!res.ok) {
           const txt = await res.text().catch(() => "");
-          console.error("OpenAI error response:", txt);
-          throw new Error("OpenAI error " + res.status + " – see console for details.");
+          debugLog("OpenAI error body", txt);
+          throw new Error("OpenAI error " + res.status + " – see debug log.");
         }
         const data = await res.json();
+        debugLog("OpenAI response payload (truncated)", {
+          hasChoices: !!(data.choices && data.choices.length),
+          firstChoiceRole: data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.role
+        });
         const choice = data.choices && data.choices[0];
         const outText = choice && choice.message && choice.message.content
           ? choice.message.content
           : "";
 
         if (!outText) {
+          debugLog("OpenAI returned empty content", data);
           throw new Error("OpenAI returned an empty response.");
         }
 
@@ -435,6 +557,7 @@
         setAiStatus("Simplified description ready. Review and tweak if needed.", false);
       } catch (e) {
         console.error("Simplify error:", e);
+        debugLog("Simplify error", { error: e.message || String(e) });
         setAiStatus(e.message || "Error simplifying description.", true);
       } finally {
         document.getElementById("simplifyBtn").disabled = false;
@@ -450,9 +573,41 @@
       try {
         await navigator.clipboard.writeText(txt);
         alert("Simplified text copied to clipboard.");
-      } catch {
+        debugLog("Simplified text copied to clipboard.");
+      } catch (e) {
+        debugLog("Clipboard copy failed", { error: e.message || String(e) });
         alert("Could not copy automatically. You may need to select and copy manually.");
       }
+    }
+
+    function loadStoredApiKey() {
+      const key = localStorage.getItem(OPENAI_KEY_STORAGE);
+      const input = document.getElementById("apiKeyInput");
+      if (key && input) {
+        input.value = key;
+        setApiKeyStatus("API key loaded from local storage.", false);
+      } else {
+        setApiKeyStatus("No API key saved yet.", false);
+      }
+    }
+
+    function saveApiKey() {
+      const input = document.getElementById("apiKeyInput");
+      if (!input) return;
+      const val = (input.value || "").trim();
+      if (!val) {
+        setApiKeyStatus("Cannot save an empty key.", true);
+        return;
+      }
+      localStorage.setItem(OPENAI_KEY_STORAGE, val);
+      setApiKeyStatus("API key saved to local storage.", false);
+    }
+
+    function clearApiKey() {
+      localStorage.removeItem(OPENAI_KEY_STORAGE);
+      const input = document.getElementById("apiKeyInput");
+      if (input) input.value = "";
+      setApiKeyStatus("API key cleared from local storage.", false);
     }
 
     window.addEventListener("DOMContentLoaded", () => {
@@ -460,9 +615,13 @@
       document.getElementById("simplifyBtn").addEventListener("click", simplifyDescription);
       document.getElementById("copyBtn").addEventListener("click", copySimplified);
       document.getElementById("eventSelect").addEventListener("change", fillFromSelectedEvent);
+      document.getElementById("saveKeyBtn").addEventListener("click", saveApiKey);
+      document.getElementById("clearKeyBtn").addEventListener("click", clearApiKey);
 
       setStatus("Waiting for sign-in…", false);
-      setTimeout(() => { try { initAuth(); } catch(e){} }, 0);
+      debugLog("Page loaded, initialising auth soon…");
+      loadStoredApiKey();
+      setTimeout(() => { try { initAuth(); } catch(e){ debugLog("initAuth threw", e); } }, 0);
     });
   </script>
 </body>
