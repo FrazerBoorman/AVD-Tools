@@ -76,6 +76,18 @@
       background:transparent;
       cursor:pointer;
       text-decoration:none;
+      transition:background .12s ease, border-color .12s ease, color .12s ease, box-shadow .12s ease, transform .06s ease;
+    }
+    .pill-btn:hover {
+      border-color:var(--accent);
+      color:var(--accent);
+      background:var(--accent-soft);
+      box-shadow:0 4px 10px rgba(15,23,42,0.4);
+      transform:translateY(-0.5px);
+    }
+    .pill-btn:focus-visible {
+      outline:2px solid var(--accent);
+      outline-offset:2px;
     }
 
     .section {
@@ -152,6 +164,12 @@
       color:var(--muted);
       margin-top:4px;
     }
+    details.advanced summary {
+      cursor:pointer;
+      font-size:12px;
+      color:var(--muted);
+      margin-top:4px;
+    }
     #debugOutput {
       margin-top:6px;
       max-height:200px;
@@ -184,38 +202,10 @@
         </button>
       </div>
 
-      <!-- STEP 0 – OpenAI API key -->
-      <div class="section">
-        <div class="section-title">Step 0 – OpenAI API key (stored locally)</div>
-        <div class="grid">
-          <div>
-            <label for="apiKeyInput">OpenAI API key</label>
-            <input id="apiKeyInput" type="password" autocomplete="off"
-                   placeholder="sk-..." />
-            <div class="small-note">
-              Stored only in this browser via <code>localStorage</code>. Used by the simplifier.
-            </div>
-          </div>
-        </div>
-        <div class="btn-row">
-          <button id="saveKeyBtn" type="button">Save key</button>
-          <button id="clearKeyBtn" type="button">Clear key</button>
-        </div>
-        <div id="apiKeyStatus" class="small-note"></div>
-      </div>
-
       <!-- STEP 1 – Calendar selection -->
       <div class="section">
         <div class="section-title">Step 1 – Load events from Google Calendar (last 14 days + today)</div>
         <div class="grid">
-          <div>
-            <label for="calendarId">Calendar ID</label>
-            <input id="calendarId"
-              value="bb14db72acb2ffd4230316960d02103fa66e54901522ff7b8113eec682f6d42e@group.calendar.google.com" />
-            <div class="small-note">
-              Same calendar as your other tools.
-            </div>
-          </div>
           <div>
             <label for="eventSelect">Recent events</label>
             <select id="eventSelect">
@@ -260,7 +250,7 @@
           <button id="copyBtn" type="button">Copy simplified text</button>
         </div>
         <div class="small-note">
-          Uses the OpenAI key saved above. You only need to set it once per device.
+          Uses the OpenAI key saved below. You only need to set it once per device.
         </div>
 
         <div style="margin-top:10px;">
@@ -268,6 +258,38 @@
           <textarea id="simplifiedText"
             placeholder="AI output will appear here. You can tweak it before copying into the calendar."></textarea>
         </div>
+      </div>
+
+      <!-- ADVANCED – API & Calendar settings (hidden by default, near debugger) -->
+      <div class="section">
+        <details class="advanced">
+          <summary>API & Calendar settings (advanced)</summary>
+          <div style="margin-top:6px;">
+            <div class="grid">
+              <div>
+                <label for="apiKeyInput">OpenAI API key</label>
+                <input id="apiKeyInput" type="password" autocomplete="off"
+                       placeholder="sk-..." />
+                <div class="small-note">
+                  Stored only in this browser via <code>localStorage</code>. Used by the simplifier.
+                </div>
+              </div>
+              <div>
+                <label for="calendarId">Calendar ID</label>
+                <input id="calendarId"
+                  value="bb14db72acb2ffd4230316960d02103fa66e54901522ff7b8113eec682f6d42e@group.calendar.google.com" />
+                <div class="small-note">
+                  Calendar used when loading recent events (same as your other tools).
+                </div>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button id="saveKeyBtn" type="button">Save key</button>
+              <button id="clearKeyBtn" type="button">Clear key</button>
+            </div>
+            <div id="apiKeyStatus" class="small-note"></div>
+          </div>
+        </details>
       </div>
 
       <!-- DEBUG PANEL -->
@@ -478,7 +500,7 @@
       const key = localStorage.getItem(OPENAI_KEY_STORAGE);
       if (!key) {
         debugLog("OpenAI key missing in localStorage", OPENAI_KEY_STORAGE);
-        throw new Error("No OpenAI API key found. Save it in Step 0.");
+        throw new Error("No OpenAI API key found. Save it in the advanced settings.");
       }
       return key;
     }
