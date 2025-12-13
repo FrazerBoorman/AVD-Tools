@@ -61,6 +61,20 @@
       padding:2px 6px;
       border-radius:999px;
       border:1px solid var(--border);
+      background:transparent;
+      cursor:pointer;
+      transition:background .12s ease, border-color .12s ease, color .12s ease, box-shadow .12s ease, transform .06s ease;
+    }
+    .version-tag:hover {
+      border-color:var(--accent);
+      color:var(--accent);
+      background:var(--accent-soft);
+      box-shadow:0 4px 10px rgba(15,23,42,0.4);
+      transform:translateY(-0.5px);
+    }
+    .version-tag:focus-visible {
+      outline:2px solid var(--accent);
+      outline-offset:2px;
     }
     .muted { color:var(--muted); font-size:14px; }
 
@@ -190,7 +204,9 @@
         <div>
           <h1>
             Job Description Simplifier
-            <span class="version-tag">v0.1</span>
+            <button id="copyVersionBtn" class="version-tag" type="button"
+                    title="Copy full index.html to clipboard"
+                    aria-label="Copy full index.html to clipboard">v0.1</button>
           </h1>
           <div class="muted">
             Pick an event or paste text, then get a shorter, clearer description that doesn’t lose critical details.
@@ -602,6 +618,72 @@
       }
     }
 
+    async function getIndexHtmlSource() {
+      const request = new Request("index.html", { cache: "no-cache" });
+      try {
+        const res = await fetch(request);
+        if (!res.ok) {
+          throw new Error("Failed to fetch index.html (" + res.status + ")");
+        }
+        return await res.text();
+      } catch (e) {
+        const dt = document.doctype;
+        const doctype = dt
+          ? "<!DOCTYPE " + dt.name + (dt.publicId ? " PUBLIC \"" + dt.publicId + "\"" : "") +
+            (dt.systemId ? " \"" + dt.systemId + "\"" : "") + ">\n"
+          : "<!DOCTYPE html>\n";
+        return doctype + document.documentElement.outerHTML;
+      }
+    }
+
+    async function copyFullPageHtml() {
+      const htmlString = await getIndexHtmlSource();
+
+      try {
+        if (navigator.clipboard && typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+          const plainBlob = new Blob([htmlString], { type: "text/plain" });
+          const htmlBlob  = new Blob([htmlString], { type: "text/html" });
+          await navigator.clipboard.write([
+            new ClipboardItem({ "text/plain": plainBlob, "text/html": htmlBlob })
+          ]);
+        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(htmlString);
+        } else {
+          throw new Error("Clipboard API unavailable");
+        }
+        alert("Full index.html copied to clipboard.");
+        return;
+      } catch (e) {
+        const helper = document.createElement("textarea");
+        helper.value = htmlString;
+        helper.setAttribute("aria-hidden", "true");
+        helper.setAttribute("readonly", "true");
+        helper.style.position = "fixed";
+        helper.style.left = "-9999px";
+        helper.style.top = "0";
+        helper.style.opacity = "0";
+        helper.style.pointerEvents = "none";
+        document.body.appendChild(helper);
+
+        let fallbackSuccess = false;
+        try {
+          helper.focus({ preventScroll: true });
+          helper.select();
+          helper.setSelectionRange(0, helper.value.length);
+          fallbackSuccess = !!(document.execCommand && document.execCommand("copy"));
+        } finally {
+          document.body.removeChild(helper);
+        }
+
+        if (fallbackSuccess) {
+          alert("Full index.html copied to clipboard.");
+          return;
+        }
+
+        alert("Could not copy the full page automatically. You may need to copy manually.");
+      }
+    }
+
     function loadStoredApiKey() {
       const key = localStorage.getItem(OPENAI_KEY_STORAGE);
       const input = document.getElementById("apiKeyInput");
@@ -636,6 +718,7 @@
       document.getElementById("signinBtn").addEventListener("click", signInManual);
       document.getElementById("simplifyBtn").addEventListener("click", simplifyDescription);
       document.getElementById("copyBtn").addEventListener("click", copySimplified);
+      document.getElementById("copyVersionBtn").addEventListener("click", copyFullPageHtml);
       document.getElementById("eventSelect").addEventListener("change", fillFromSelectedEvent);
       document.getElementById("saveKeyBtn").addEventListener("click", saveApiKey);
       document.getElementById("clearKeyBtn").addEventListener("click", clearApiKey);
