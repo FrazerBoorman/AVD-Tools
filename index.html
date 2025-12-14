@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Job Description Simplifier v0.1</title>
+  <title>Job Description Simplifier v0.10</title>
   <meta name="color-scheme" content="light dark" />
   <!-- Google OAuth client ID -->
   <meta name="google-oauth-client-id"
@@ -14,13 +14,13 @@
     :root {
       --bg:#0f172a; --card:#020617; --panel:#020617; --border:#1e293b;
       --text:#e5e7eb; --muted:#94a3b8; --accent:#38bdf8; --accent-soft:rgba(56,189,248,0.12);
-      --danger:#ef4444;
+      --danger:#ef4444; --ok:#22c55e;
     }
     @media (prefers-color-scheme: light) {
       :root {
         --bg:#f8fafc; --card:#ffffff; --panel:#ffffff; --border:#e5e7eb;
         --text:#020617; --muted:#475569; --accent:#0ea5e9; --accent-soft:rgba(14,165,233,0.10);
-        --danger:#b91c1c;
+        --danger:#b91c1c; --ok:#16a34a;
       }
     }
     * { box-sizing:border-box; }
@@ -171,13 +171,9 @@
     .small-note { font-size:11px;color:var(--muted);margin-top:3px; }
     #status, #aiStatus { font-size:12px;color:var(--muted);margin-top:4px; }
     .danger { color:var(--danger); }
+    .ok { color:var(--ok); }
 
-    details.debug-panel summary {
-      cursor:pointer;
-      font-size:12px;
-      color:var(--muted);
-      margin-top:4px;
-    }
+    details.debug-panel summary,
     details.advanced summary {
       cursor:pointer;
       font-size:12px;
@@ -186,7 +182,7 @@
     }
     #debugOutput {
       margin-top:6px;
-      max-height:200px;
+      max-height:220px;
       overflow:auto;
       background:var(--panel);
       border-radius:10px;
@@ -195,6 +191,8 @@
       font-size:11px;
       white-space:pre-wrap;
     }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
   </style>
 </head>
 <body>
@@ -206,7 +204,7 @@
             Job Description Simplifier
             <button id="copyVersionBtn" class="version-tag" type="button"
                     title="Copy full index.html to clipboard"
-                    aria-label="Copy full index.html to clipboard">v0.1</button>
+                    aria-label="Copy full index.html to clipboard">v0.10</button>
           </h1>
           <div class="muted">
             Pick an event or paste text, then get a shorter, clearer description that doesn’t lose critical details.
@@ -220,10 +218,10 @@
 
       <!-- STEP 1 – Calendar selection -->
       <div class="section">
-        <div class="section-title">Step 1 – Load events from Google Calendar (last 14 days + today)</div>
+        <div class="section-title">Step 1 – Load events from Google Calendar</div>
         <div class="grid">
           <div>
-            <label for="eventSelect">Recent events</label>
+            <label for="eventSelect">Events</label>
             <select id="eventSelect">
               <option value="">Sign in to load events…</option>
             </select>
@@ -249,12 +247,12 @@
             <div>
               <label for="advancedEndDate">End date</label>
               <input id="advancedEndDate" type="date" />
-              <div class="small-note">Defaults to the end of today.</div>
+              <div class="small-note">Defaults to 14 days ahead (future events included).</div>
             </div>
           </div>
           <div class="btn-row" style="margin-top:8px;">
             <button id="applyRangeBtn" type="button">Apply date range</button>
-            <div class="small-note">Uses the range above when loading events.</div>
+            <div class="small-note">Loads events inside this range (future events included).</div>
           </div>
         </details>
       </div>
@@ -296,7 +294,7 @@
         </div>
       </div>
 
-      <!-- ADVANCED – API & Calendar settings (hidden by default, near debugger) -->
+      <!-- ADVANCED – API & Calendar settings -->
       <div class="section">
         <details class="advanced">
           <summary>API & Calendar settings (advanced)</summary>
@@ -304,24 +302,34 @@
             <div class="grid">
               <div>
                 <label for="apiKeyInput">OpenAI API key</label>
-                <input id="apiKeyInput" type="password" autocomplete="off"
-                       placeholder="sk-..." />
+                <input id="apiKeyInput" type="password" autocomplete="off" placeholder="sk-..." />
                 <div class="small-note">
-                  Stored only in this browser via <code>localStorage</code>. Used by the simplifier.
+                  Stored only in this browser via <code>localStorage['avd_job_report_openai_key']</code>.
                 </div>
               </div>
+
+              <div>
+                <label for="modelSelect">Preferred model (optional)</label>
+                <select id="modelSelect"></select>
+                <div class="small-note">
+                  Uses model candidates + automatic fallback if a model fails.
+                </div>
+              </div>
+
               <div>
                 <label for="calendarId">Calendar ID</label>
                 <input id="calendarId"
                   value="bb14db72acb2ffd4230316960d02103fa66e54901522ff7b8113eec682f6d42e@group.calendar.google.com" />
                 <div class="small-note">
-                  Calendar used when loading recent events (same as your other tools).
+                  Calendar used when loading events (same as your other tools).
                 </div>
               </div>
             </div>
+
             <div class="btn-row">
               <button id="saveKeyBtn" type="button">Save key</button>
               <button id="clearKeyBtn" type="button">Clear key</button>
+              <button id="testOpenAiBtn" class="primary" type="button">Test OpenAI call</button>
             </div>
             <div id="apiKeyStatus" class="small-note"></div>
           </div>
@@ -339,10 +347,29 @@
   </div>
 
   <script>
+    // =========================
+    // TOOL METADATA
+    // =========================
+    const TOOL_NAME = "Job Description Simplifier";
+    const TOOL_VERSION = "v0.10";
+
+    // =========================
+    // GOOGLE CALENDAR
+    // =========================
     const CLIENT_ID = "105230737516-l8tlnck4idde83pjetrotobpt8borvts.apps.googleusercontent.com";
     const SCOPES   = "https://www.googleapis.com/auth/calendar.readonly";
-    const OPENAI_KEY_STORAGE = "avd_job_report_openai_key"; // shared with other tools
-    const TEXT_MODEL = "gpt-4o-mini"; // chat-completions-capable model
+
+    // =========================
+    // OPENAI (shared across AVD tools)
+    // =========================
+    const OPENAI_KEY_STORAGE = "avd_job_report_openai_key";
+    const OPENAI_MODEL_CANDIDATES = [
+      "gpt-5.2",
+      "gpt-5.2-mini",
+      "gpt-5.2-nano",
+      "gpt-4.1",
+      "gpt-4.1-mini"
+    ];
 
     let tokenClient = null;
     let accessToken = null;
@@ -354,11 +381,8 @@
       const ts = new Date().toISOString();
       let line = "[" + ts + "] " + msg;
       if (data !== undefined) {
-        try {
-          line += " " + JSON.stringify(data);
-        } catch {
-          line += " " + String(data);
-        }
+        try { line += " " + JSON.stringify(data); }
+        catch { line += " " + String(data); }
       }
       el.textContent += "\n" + line;
       el.scrollTop = el.scrollHeight;
@@ -379,420 +403,9 @@
       if (msg) debugLog("AI: " + msg + (isError ? " [ERROR]" : ""));
     }
 
-    function getDateRangeOrDefault() {
-      const startInput = document.getElementById("advancedStartDate");
-      const endInput = document.getElementById("advancedEndDate");
-
-      const now = new Date();
-      const defaultEnd = new Date(now);
-      defaultEnd.setHours(23,59,59,999);
-      const defaultStart = new Date(now);
-      defaultStart.setDate(defaultStart.getDate() - 14);
-      defaultStart.setHours(0,0,0,0);
-
-      const start = startInput?.value
-        ? new Date(startInput.value + "T00:00:00")
-        : defaultStart;
-      const end = endInput?.value
-        ? new Date(endInput.value + "T23:59:59")
-        : defaultEnd;
-
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        setStatus("Invalid date range. Please use valid dates.", true);
-        return null;
-      }
-      if (start > end) {
-        setStatus("Start date must be on or before the end date.", true);
-        return null;
-      }
-
-      return { start, end };
-    }
-
     function setApiKeyStatus(msg, isError) {
       const el = document.getElementById("apiKeyStatus");
       if (!el) return;
       el.textContent = msg || "";
-      el.style.color = isError ? "var(--danger)" : "var(--muted)";
-      if (msg) debugLog("APIKEY: " + msg + (isError ? " [ERROR]" : ""));
-    }
-
-    function getEventStartDate(ev) {
-      if (!ev || !ev.start) return null;
-      if (ev.start.date) return new Date(ev.start.date + "T00:00:00Z");
-      if (ev.start.dateTime) return new Date(ev.start.dateTime);
-      return null;
-    }
-    function extractEventDate(ev) {
-      if (!ev || !ev.start) return "";
-      if (ev.start.date) return ev.start.date;
-      if (ev.start.dateTime) return ev.start.dateTime.slice(0,10);
-      return "";
-    }
-
-    function initAuth() {
-      debugLog("Initialising Google auth…");
-      if (!window.google || !google.accounts || !google.accounts.oauth2) {
-        debugLog("Google accounts OAuth2 not available.");
-        return;
-      }
-      tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: SCOPES,
-        prompt: "",
-        callback: (resp) => {
-          debugLog("Google OAuth callback received", resp);
-          if (resp && resp.access_token) {
-            accessToken = resp.access_token;
-            setStatus("Signed in. Loading events…", false);
-            loadRecentEvents();
-          } else {
-            setStatus("Sign-in failed.", true);
-          }
-        }
-      });
-    }
-
-    function signInManual() {
-      debugLog("Sign-in button clicked.");
-      if (!tokenClient) initAuth();
-      if (!tokenClient) {
-        setStatus("Google auth not ready.", true);
-        return;
-      }
-      tokenClient.requestAccessToken();
-    }
-
-    function setDefaultDateRangeInputs() {
-      const startInput = document.getElementById("advancedStartDate");
-      const endInput = document.getElementById("advancedEndDate");
-      const now = new Date();
-
-      const defaultStart = new Date(now);
-      defaultStart.setDate(defaultStart.getDate() - 14);
-      const startVal = defaultStart.toISOString().slice(0, 10);
-      const endVal = now.toISOString().slice(0, 10);
-
-      if (startInput && !startInput.value) startInput.value = startVal;
-      if (endInput && !endInput.value) endInput.value = endVal;
-    }
-
-    async function loadRecentEvents() {
-      if (!accessToken) {
-        setStatus("No access token yet.", true);
-        return;
-      }
-      const range = getDateRangeOrDefault();
-      if (!range) return;
-      const { start, end } = range;
-      const calId = (document.getElementById("calendarId").value || "primary").trim();
-      debugLog("Loading recent events for calendar", { calendar: calId, start: start.toISOString(), end: end.toISOString() });
-
-      const url = new URL(
-        "https://www.googleapis.com/calendar/v3/calendars/" +
-        encodeURIComponent(calId) +
-        "/events"
-      );
-      url.searchParams.set("singleEvents","true");
-      url.searchParams.set("orderBy","startTime");
-      url.searchParams.set("timeMin", start.toISOString());
-      url.searchParams.set("timeMax", end.toISOString());
-      url.searchParams.set("maxResults","250");
-
-      try {
-        const res = await fetch(url.toString(), {
-          headers: { "Authorization":"Bearer " + accessToken }
-        });
-        debugLog("Calendar fetch response status", res.status);
-        if (!res.ok) {
-          const txt = await res.text().catch(() => "");
-          debugLog("Calendar fetch error body", txt);
-          setStatus("Calendar API error " + res.status, true);
-          return;
-        }
-        const data = await res.json();
-        debugLog("Calendar events raw", { count: (data.items || []).length });
-
-        const items = data.items || [];
-        const nowRef = new Date();
-
-        const processed = items
-          .map(ev => ({ ev, startDate: getEventStartDate(ev) }))
-          .filter(obj => obj.startDate && obj.startDate <= nowRef)
-          .sort((a,b) => b.startDate - a.startDate);
-
-        currentEvents = processed.map(x => x.ev);
-
-        const sel = document.getElementById("eventSelect");
-        sel.innerHTML = "";
-        if (!currentEvents.length) {
-          const opt = document.createElement("option");
-          opt.value = "";
-          opt.textContent = "No events in last 14 days.";
-          sel.appendChild(opt);
-          setStatus("No recent events found.", false);
-          return;
-        }
-
-        const placeholder = document.createElement("option");
-        placeholder.value = "";
-        placeholder.textContent = "— Select event —";
-        sel.appendChild(placeholder);
-
-        currentEvents.forEach((ev, idx) => {
-          const title = ev.summary || "(no title)";
-          const d = extractEventDate(ev);
-          const opt = document.createElement("option");
-          opt.value = String(idx);
-          opt.textContent = (d ? (d + " – ") : "") + title;
-          sel.appendChild(opt);
-        });
-
-        setStatus("Loaded " + currentEvents.length + " events.", false);
-      } catch (e) {
-        console.error(e);
-        debugLog("Error loading events", { error: e.message || String(e) });
-        setStatus("Error loading events: " + e.message, true);
-      }
-    }
-
-    function fillFromSelectedEvent() {
-      const sel = document.getElementById("eventSelect");
-      if (!sel.value) return;
-      const ev = currentEvents[Number(sel.value)];
-      if (!ev) return;
-      debugLog("Event selected", { title: ev.summary || "", id: ev.id });
-
-      document.getElementById("originalTitle").value = ev.summary || "";
-      const bits = [];
-      if (ev.description) bits.push(ev.description);
-      if (ev.location) bits.push("Location: " + ev.location);
-      document.getElementById("originalText").value =
-        bits.length ? bits.join("\n\n") : "";
-      setStatus("Loaded event details into original fields.", false);
-    }
-
-    function getOpenAIKeyOrThrow() {
-      const key = localStorage.getItem(OPENAI_KEY_STORAGE);
-      if (!key) {
-        debugLog("OpenAI key missing in localStorage", OPENAI_KEY_STORAGE);
-        throw new Error("No OpenAI API key found. Save it in the advanced settings.");
-      }
-      return key;
-    }
-
-    async function simplifyDescription() {
-      const title = (document.getElementById("originalTitle").value || "").trim();
-      const text  = (document.getElementById("originalText").value || "").trim();
-
-      if (!title && !text) {
-        setAiStatus("Nothing to simplify. Select an event or paste text first.", true);
-        return;
-      }
-
-      const combined = "Title: " + title + "\n\nDetails:\n" + text;
-      debugLog("Simplify called", { titleLength: title.length, textLength: text.length });
-
-      document.getElementById("simplifyBtn").disabled = true;
-      setAiStatus("Talking to OpenAI…", false);
-
-      try {
-        const apiKey = getOpenAIKeyOrThrow();
-        const systemPrompt =
-          "You are simplifying an AV job/event description for an engineer who will read it quickly on their phone.\n\n" +
-          "GOAL:\n" +
-          "- Rewrite the description so it is shorter, clearer and easier to scan.\n" +
-          "- KEEP all important factual details: locations, building names, dates, key constraints, key people, kit names, " +
-          "  special requirements, access instructions, and any unusual caveats.\n" +
-          "- Remove waffle, repetition, and internal admin noise that doesn’t help someone understand what they’re doing that day.\n\n" +
-          "Rules:\n" +
-          "- Do NOT invent anything that is not clearly implied by the original text.\n" +
-          "- Do NOT drop important instructions just because they sound boring.\n" +
-          "- It’s fine to reorder information to improve clarity.\n" +
-          "- The output should be suitable for dropping straight into the calendar description.\n\n" +
-          "Output:\n" +
-          "- A single simplified description (1–3 short paragraphs and/or a few bullet points).\n" +
-          "- Do NOT add commentary or labels like 'Summary:' – just the cleaned-up text.";
-
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method:"POST",
-          headers:{
-            "Content-Type":"application/json",
-            "Authorization":"Bearer " + apiKey
-          },
-          body: JSON.stringify({
-            model: TEXT_MODEL,
-            messages: [
-              { role:"system", content: systemPrompt },
-              { role:"user", content: combined }
-            ]
-          })
-        });
-
-        debugLog("OpenAI response status", res.status);
-
-        if (!res.ok) {
-          const txt = await res.text().catch(() => "");
-          debugLog("OpenAI error body", txt);
-          throw new Error("OpenAI error " + res.status + " – see debug log.");
-        }
-        const data = await res.json();
-        debugLog("OpenAI response payload (truncated)", {
-          hasChoices: !!(data.choices && data.choices.length),
-          firstChoiceRole: data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.role
-        });
-        const choice = data.choices && data.choices[0];
-        const outText = choice && choice.message && choice.message.content
-          ? choice.message.content
-          : "";
-
-        if (!outText) {
-          debugLog("OpenAI returned empty content", data);
-          throw new Error("OpenAI returned an empty response.");
-        }
-
-        document.getElementById("simplifiedText").value = outText;
-        setAiStatus("Simplified description ready. Review and tweak if needed.", false);
-      } catch (e) {
-        console.error("Simplify error:", e);
-        debugLog("Simplify error", { error: e.message || String(e) });
-        setAiStatus(e.message || "Error simplifying description.", true);
-      } finally {
-        document.getElementById("simplifyBtn").disabled = false;
-      }
-    }
-
-    async function copySimplified() {
-      const txt = (document.getElementById("simplifiedText").value || "").trim();
-      if (!txt) {
-        alert("No simplified text to copy yet.");
-        return;
-      }
-      try {
-        await navigator.clipboard.writeText(txt);
-        alert("Simplified text copied to clipboard.");
-        debugLog("Simplified text copied to clipboard.");
-      } catch (e) {
-        debugLog("Clipboard copy failed", { error: e.message || String(e) });
-        alert("Could not copy automatically. You may need to select and copy manually.");
-      }
-    }
-
-    async function getIndexHtmlSource() {
-      const request = new Request("index.html", { cache: "no-cache" });
-      try {
-        const res = await fetch(request);
-        if (!res.ok) {
-          throw new Error("Failed to fetch index.html (" + res.status + ")");
-        }
-        return await res.text();
-      } catch (e) {
-        const dt = document.doctype;
-        const doctype = dt
-          ? "<!DOCTYPE " + dt.name + (dt.publicId ? " PUBLIC \"" + dt.publicId + "\"" : "") +
-            (dt.systemId ? " \"" + dt.systemId + "\"" : "") + ">\n"
-          : "<!DOCTYPE html>\n";
-        return doctype + document.documentElement.outerHTML;
-      }
-    }
-
-    async function copyFullPageHtml() {
-      const htmlString = await getIndexHtmlSource();
-
-      try {
-        if (navigator.clipboard && typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
-          const plainBlob = new Blob([htmlString], { type: "text/plain" });
-          const htmlBlob  = new Blob([htmlString], { type: "text/html" });
-          await navigator.clipboard.write([
-            new ClipboardItem({ "text/plain": plainBlob, "text/html": htmlBlob })
-          ]);
-        } else if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(htmlString);
-        } else {
-          throw new Error("Clipboard API unavailable");
-        }
-        alert("Full index.html copied to clipboard.");
-        return;
-      } catch (e) {
-        const helper = document.createElement("textarea");
-        helper.value = htmlString;
-        helper.setAttribute("aria-hidden", "true");
-        helper.setAttribute("readonly", "true");
-        helper.style.position = "fixed";
-        helper.style.left = "-9999px";
-        helper.style.top = "0";
-        helper.style.opacity = "0";
-        helper.style.pointerEvents = "none";
-        document.body.appendChild(helper);
-
-        let fallbackSuccess = false;
-        try {
-          helper.focus({ preventScroll: true });
-          helper.select();
-          helper.setSelectionRange(0, helper.value.length);
-          fallbackSuccess = !!(document.execCommand && document.execCommand("copy"));
-        } finally {
-          document.body.removeChild(helper);
-        }
-
-        if (fallbackSuccess) {
-          alert("Full index.html copied to clipboard.");
-          return;
-        }
-
-        alert("Could not copy the full page automatically. You may need to copy manually.");
-      }
-    }
-
-    function loadStoredApiKey() {
-      const key = localStorage.getItem(OPENAI_KEY_STORAGE);
-      const input = document.getElementById("apiKeyInput");
-      if (key && input) {
-        input.value = key;
-        setApiKeyStatus("API key loaded from local storage.", false);
-      } else {
-        setApiKeyStatus("No API key saved yet.", false);
-      }
-    }
-
-    function saveApiKey() {
-      const input = document.getElementById("apiKeyInput");
-      if (!input) return;
-      const val = (input.value || "").trim();
-      if (!val) {
-        setApiKeyStatus("Cannot save an empty key.", true);
-        return;
-      }
-      localStorage.setItem(OPENAI_KEY_STORAGE, val);
-      setApiKeyStatus("API key saved to local storage.", false);
-    }
-
-    function clearApiKey() {
-      localStorage.removeItem(OPENAI_KEY_STORAGE);
-      const input = document.getElementById("apiKeyInput");
-      if (input) input.value = "";
-      setApiKeyStatus("API key cleared from local storage.", false);
-    }
-
-    window.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("signinBtn").addEventListener("click", signInManual);
-      document.getElementById("simplifyBtn").addEventListener("click", simplifyDescription);
-      document.getElementById("copyBtn").addEventListener("click", copySimplified);
-      document.getElementById("copyVersionBtn").addEventListener("click", copyFullPageHtml);
-      document.getElementById("eventSelect").addEventListener("change", fillFromSelectedEvent);
-      document.getElementById("saveKeyBtn").addEventListener("click", saveApiKey);
-      document.getElementById("clearKeyBtn").addEventListener("click", clearApiKey);
-      document.getElementById("applyRangeBtn").addEventListener("click", () => {
-        setStatus("Loading events with custom range…", false);
-        loadRecentEvents();
-      });
-
-      setStatus("Waiting for sign-in…", false);
-      debugLog("Page loaded, initialising auth soon…");
-      loadStoredApiKey();
-      setDefaultDateRangeInputs();
-      setTimeout(() => { try { initAuth(); } catch(e){ debugLog("initAuth threw", e); } }, 0);
-    });
-  </script>
-</body>
-</html>
+      el.className = "small-note " + (isError ? "danger" : "");
+      if (msg) debugLog("APIKEY:
