@@ -23,8 +23,10 @@
         --danger:#b91c1c; --ok:#16a34a;
       }
     }
+
     * { box-sizing:border-box; }
     html, body { height:100%; }
+
     body {
       margin:0;
       font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
@@ -34,11 +36,13 @@
         var(--bg);
       color:var(--text);
     }
+
     .wrap {
       max-width: 1000px;
       margin:0 auto;
       padding:18px 16px 26px;
     }
+
     .card {
       background:var(--card);
       border-radius:20px;
@@ -46,6 +50,7 @@
       padding:18px 18px 20px;
       box-shadow:0 18px 40px rgba(15,23,42,0.45);
     }
+
     h1 {
       margin:0;
       font-size:24px;
@@ -53,7 +58,9 @@
       display:flex;
       align-items:baseline;
       gap:8px;
+      flex-wrap:wrap;
     }
+
     .version-tag {
       font-size:11px;
       font-weight:600;
@@ -76,6 +83,7 @@
       outline:2px solid var(--accent);
       outline-offset:2px;
     }
+
     .muted { color:var(--muted); font-size:14px; }
 
     .pill-btn {
@@ -114,6 +122,7 @@
     @media (prefers-color-scheme: light) {
       .section { background:#f9fafb; }
     }
+
     .section-title {
       font-size:13px;
       font-weight:700;
@@ -122,12 +131,14 @@
       color:var(--muted);
       margin-bottom:6px;
     }
+
     label {
       font-size:13px;
       font-weight:600;
       margin-bottom:4px;
       display:block;
     }
+
     input, select, textarea {
       width:100%;
       font-size:14px;
@@ -145,7 +156,9 @@
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap:10px;
     }
+
     .btn-row { display:flex;flex-wrap:wrap;gap:8px;margin-top:8px; }
+
     button {
       border-radius:999px;
       border:1px solid var(--border);
@@ -173,14 +186,6 @@
     .danger { color:var(--danger); }
     .ok { color:var(--ok); }
 
-    /* legacy summary styling overridden by shared details styles */
-    details.debug-panel summary,
-    details.advanced summary {
-      cursor:pointer;
-      font-size:12px;
-      color:var(--muted);
-      margin-top:4px;
-    }
     #debugOutput {
       margin-top:6px;
       max-height:220px;
@@ -198,9 +203,8 @@
     /* ============================
        AVD DETAILS (shared invariant)
        - dashed border + padded container
-       - closed by default (enforced in JS)
-       - consistent caret marker + rotate on open
-       - highlight when open
+       - closed by default on refresh (enforced in JS)
+       - consistent caret marker (cross-browser) + rotate on open
        - nested details inherit automatically
        ============================ */
 
@@ -210,6 +214,7 @@
       border:1px dashed var(--border);
       padding:8px 10px;
       background:rgba(15,23,42,0.40);
+      font-size:11px;
     }
     @media (prefers-color-scheme: light) {
       details { background:#f3f4f6; }
@@ -226,6 +231,7 @@
       user-select:none;
       outline:none;
     }
+
     /* Remove native marker so our caret is consistent cross-browser */
     details > summary::-webkit-details-marker { display:none; }
     details > summary::marker { content:""; }
@@ -234,47 +240,37 @@
     details > summary::before {
       content:"▸";
       display:inline-block;
+      width:1em;
       transform:rotate(0deg);
       transition:transform .12s ease;
-      opacity:0.9;
+      opacity:0.85;
     }
-    details[open] > summary::before { transform:rotate(90deg); }
+    details[open] > summary::before { transform:rotate(90deg); opacity:1; }
 
-    /* Open highlight */
-    details[open] {
-      border-color:var(--accent);
-      background:rgba(56,189,248,0.08);
-      box-shadow:0 6px 18px rgba(15,23,42,0.25);
-    }
-    @media (prefers-color-scheme: light) {
-      details[open] { background:rgba(14,165,233,0.08); }
-    }
-    details[open] > summary {
-      color:var(--text);
-    }
+    /* Subtle open state (no bright border / no blue highlight) */
+    details[open] > summary { color:var(--text); }
 
-    /* Keep debug panel inner pre consistent */
-    details.debug-panel pre { margin-top:6px; }
-
+    /* Inner spacing for details content */
+    details > *:not(summary) { margin-top:8px; }
   </style>
 </head>
+
 <body>
   <div class="wrap">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
         <div>
           <h1>
-            Job Description Simplifier
+            <span id="toolNameHeading">Job Description Simplifier</span>
             <button id="copyVersionBtn" class="version-tag" type="button"
                     title="Copy full index.html to clipboard"
                     aria-label="Copy full index.html to clipboard">v0.11</button>
           </h1>
-          <div class="muted">
+          <div class="muted" id="toolShortDescription">
             Pick an event or paste text, then get a shorter, clearer description that doesn’t lose critical details.
           </div>
         </div>
-        <button class="pill-btn" type="button"
-                onclick="window.location.href='https://frazerboorman.github.io/';">
+        <button class="pill-btn" type="button" onclick="window.location.href='https://frazerboorman.github.io/';">
           Frazer · AVD Tools
         </button>
       </div>
@@ -299,9 +295,9 @@
           </div>
         </div>
 
-        <details class="advanced" style="margin-top:10px;">
+        <details class="advanced" id="advancedRangeDetails" style="margin-top:10px;">
           <summary>Advanced date range</summary>
-          <div class="grid" style="margin-top:8px;">
+          <div class="grid">
             <div>
               <label for="advancedStartDate">Start date</label>
               <input id="advancedStartDate" type="date" />
@@ -313,7 +309,7 @@
               <div class="small-note">Defaults to 14 days ahead (future events included).</div>
             </div>
           </div>
-          <div class="btn-row" style="margin-top:8px;">
+          <div class="btn-row">
             <button id="applyRangeBtn" type="button">Apply date range</button>
             <div class="small-note">Loads events inside this range (future events included).</div>
           </div>
@@ -359,15 +355,15 @@
 
       <!-- ADVANCED – API & Calendar settings -->
       <div class="section">
-        <details class="advanced">
+        <details class="advanced" id="apiCalendarDetails">
           <summary>API & Calendar settings (advanced)</summary>
-          <div style="margin-top:6px;">
+          <div>
             <div class="grid">
               <div>
                 <label for="apiKeyInput">OpenAI API key</label>
                 <input id="apiKeyInput" type="password" autocomplete="off" placeholder="sk-..." />
                 <div class="small-note">
-                  Stored only in this browser via <code>localStorage['avd_job_report_openai_key']</code>.
+                  Stored only in this browser via <code class="mono">localStorage['avd_job_report_openai_key']</code>.
                 </div>
               </div>
 
@@ -401,7 +397,7 @@
 
       <!-- DEBUG PANEL -->
       <div class="section">
-        <details class="debug-panel">
+        <details class="debug-panel" id="debugDetails">
           <summary>Debug log (errors / API responses)</summary>
           <pre id="debugOutput">Debug log initialised…</pre>
         </details>
@@ -410,39 +406,37 @@
   </div>
 
   <script>
-
     /*
       ============================================================
       AVD JOB-SIMP — TOOL CONSTITUTION + GUARD RAILS (CODEX ONLY)
       ============================================================
 
-      TOOL_CODE: JOB-SIMP
-      TOOL_NAME: Job Description Simplifier
-      VERSION: v0.11
-      LAST_UPDATED: 2025-12-21
-
-      CODEX POINTERS:
-      - Root: /CODEX.md (front door: shared invariants + do/don't)
-      - Tool manual: /context/JOB-SIMP.md (full behaviour, regression checks)
-
       Purpose:
-      - Pull a Calendar event (title + full description/notes + location) or accept pasted text,
-        then simplify it without losing operational detail.
+      - Pull Google Calendar events, load full event details (incl. description/notes), and simplify text
+        without losing operationally critical info.
 
-      Non-negotiables / invariants:
-      1) Calendar selection must populate:
-         - Title -> #originalTitle
-         - Full description/notes -> #originalText
-         - Location appended if present
-         - If description is missing from events.list payload, tool must fetch full event via events.get.
+      Non‑negotiables / invariants:
+      1) Event selection must populate:
+         - Title → #originalTitle
+         - Full description/notes → #originalText
+         - Include location appended as "Location: …" when present.
 
-      2) Do not filter out future events.
-      3) Advanced date range includes future end date by default.
-      4) Shared OpenAI key storage:
-         - localStorage['avd_job_report_openai_key'] must remain stable.
+      2) Calendar range:
+         - Default range includes future events.
+         - Advanced date range is a <details>/<summary> disclosure (closed by default on refresh).
+         - "Apply date range" re-fetches immediately.
 
-      Safe edits:
-      - No refactor that changes IDs, storage key names, or model fallback semantics unless explicitly required.
+      3) Details panels:
+         - All <details> use dashed border + padded container styling.
+         - No bright-blue "open highlight" borders.
+         - Consistent caret marker; nested details inherit automatically.
+         - Closed by default on refresh.
+
+      4) Auth robustness:
+         - Google library loads async; sign-in must still work by retrying init until ready.
+
+      Pointers:
+      - See repository root CODEX.md and context/JOB-SIMP.md for tool-wide invariants + regression checks.
     */
 
     // =========================
@@ -452,7 +446,6 @@
     const TOOL_VERSION = "v0.11";
     const TOOL_LAST_UPDATED = "2025-12-21";
     const TOOL_CODE = "JOB-SIMP";
-
 
     // =========================
     // GOOGLE CALENDAR
@@ -476,6 +469,9 @@
     let accessToken = null;
     let currentEvents = [];
 
+    // -------------------------
+    // Logging / statuses
+    // -------------------------
     function debugLog(msg, data) {
       const el = document.getElementById("debugOutput");
       if (!el) return;
@@ -485,8 +481,7 @@
         try { line += " " + JSON.stringify(data); }
         catch { line += " " + String(data); }
       }
-      el.textContent += "
-" + line;
+      el.textContent += "\n" + line;
       el.scrollTop = el.scrollHeight;
     }
 
@@ -497,6 +492,7 @@
       el.className = isError ? "danger" : "";
       debugLog("STATUS: " + msg + (isError ? " [ERROR]" : ""));
     }
+
     function setAiStatus(msg, isError) {
       const el = document.getElementById("aiStatus");
       if (!el) return;
@@ -513,6 +509,9 @@
       if (msg) debugLog("APIKEY: " + msg + (isError ? " [ERROR]" : ""));
     }
 
+    // -------------------------
+    // Models
+    // -------------------------
     function initModelDropdown() {
       const sel = document.getElementById("modelSelect");
       if (!sel) return;
@@ -585,6 +584,7 @@
       if (ev.start.dateTime) return new Date(ev.start.dateTime);
       return null;
     }
+
     function extractEventDate(ev) {
       if (!ev || !ev.start) return "";
       if (ev.start.date) return ev.start.date;
@@ -592,11 +592,17 @@
       return "";
     }
 
+    // -------------------------
+    // Auth robustness (async gsi load)
+    // -------------------------
+    function isGoogleOAuthReady() {
+      return !!(window.google && google.accounts && google.accounts.oauth2);
+    }
+
     function initAuth() {
-      debugLog("Initialising Google auth…");
-      if (!window.google || !google.accounts || !google.accounts.oauth2) {
+      if (!isGoogleOAuthReady()) {
         debugLog("Google accounts OAuth2 not available yet.");
-        return;
+        return false;
       }
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
@@ -613,13 +619,31 @@
           }
         }
       });
+      debugLog("Google token client initialised.");
+      return true;
     }
 
-    function signInManual() {
+    function ensureAuthReady(maxWaitMs = 6000) {
+      // Try immediately
+      if (tokenClient) return Promise.resolve(true);
+      if (initAuth()) return Promise.resolve(true);
+
+      // Poll until the gsi client arrives
+      return new Promise((resolve) => {
+        const started = Date.now();
+        const t = setInterval(() => {
+          if (tokenClient) { clearInterval(t); resolve(true); return; }
+          if (initAuth()) { clearInterval(t); resolve(true); return; }
+          if (Date.now() - started > maxWaitMs) { clearInterval(t); resolve(false); }
+        }, 150);
+      });
+    }
+
+    async function signInManual() {
       debugLog("Sign-in button clicked.");
-      if (!tokenClient) initAuth();
-      if (!tokenClient) {
-        setStatus("Google auth not ready.", true);
+      const ok = await ensureAuthReady();
+      if (!ok || !tokenClient) {
+        setStatus("Google auth not ready (refresh and try again).", true);
         return;
       }
       tokenClient.requestAccessToken();
@@ -705,64 +729,50 @@
       }
     }
 
-
     async function fetchEventDetails(eventId) {
-      if (!accessToken) throw new Error("No access token yet.");
+      if (!accessToken) throw new Error("No access token.");
       const calId = (document.getElementById("calendarId").value || "primary").trim();
-      const url = new URL(
-        "https://www.googleapis.com/calendar/v3/calendars/" +
+
+      const url = "https://www.googleapis.com/calendar/v3/calendars/" +
         encodeURIComponent(calId) +
-        "/events/" + encodeURIComponent(eventId)
-      );
+        "/events/" +
+        encodeURIComponent(eventId);
 
-      // Ask explicitly for fields we care about (defensive against partial payloads)
-      url.searchParams.set("fields", "id,summary,description,location,start,end");
+      debugLog("Fetching event details", { eventId });
 
-      debugLog("Fetching full event via events.get", { eventId, url: url.toString() });
-
-      const res = await fetch(url.toString(), { headers: { "Authorization":"Bearer " + accessToken } });
-      debugLog("events.get response status", res.status);
-
+      const res = await fetch(url, { headers: { "Authorization":"Bearer " + accessToken } });
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
-        debugLog("events.get error body (truncated)", txt.slice(0, 500));
-        throw new Error("Calendar events.get error " + res.status);
+        debugLog("Event details error body", txt);
+        throw new Error("Event details API error " + res.status);
       }
       return await res.json();
     }
 
-
     async function fillFromSelectedEvent() {
       const sel = document.getElementById("eventSelect");
       if (!sel.value) return;
-      const ev0 = currentEvents[Number(sel.value)];
-      if (!ev0) return;
 
-      let ev = ev0;
+      const baseEv = currentEvents[Number(sel.value)];
+      if (!baseEv) return;
 
-      // If description isn't present in the list payload, fetch the full event.
-      // This fixes cases where list responses are partial (or tooling later adds a fields= filter).
-      const needsFetch = (!ev.description || !String(ev.description).trim()) && ev.id;
-      if (needsFetch) {
-        try {
-          ev = await fetchEventDetails(ev.id);
-          // update cache so subsequent selects are instant
-          currentEvents[Number(sel.value)] = ev;
-        } catch (e) {
-          debugLog("events.get failed; continuing with list payload", { error: e.message || String(e) });
-        }
+      debugLog("Event selected", { title: baseEv.summary || "", id: baseEv.id });
+
+      // We fetch the full event to ensure we get the full description/notes every time.
+      let ev = baseEv;
+      try {
+        if (baseEv.id) ev = await fetchEventDetails(baseEv.id);
+      } catch (e) {
+        debugLog("Falling back to list event (details fetch failed)", { error: e.message || String(e) });
       }
-
-      debugLog("Event selected", { title: ev.summary || "", id: ev.id, hasDescription: !!(ev.description && String(ev.description).trim()) });
 
       document.getElementById("originalTitle").value = ev.summary || "";
 
       const bits = [];
-      if (ev.description && String(ev.description).trim()) bits.push(ev.description);
-      if (ev.location && String(ev.location).trim()) bits.push("Location: " + ev.location);
+      if (ev.description) bits.push(ev.description);
+      if (ev.location) bits.push("Location: " + ev.location);
 
       document.getElementById("originalText").value = bits.length ? bits.join("\n\n") : "";
-
       setStatus("Loaded event details into original fields.", false);
     }
 
@@ -860,47 +870,30 @@
         return;
       }
 
-      const combined = "Title: " + title + "
-
-Details:
-" + text;
+      const combined = `Title: ${title}\n\nDetails:\n${text}`;
       debugLog("Simplify called", { titleLength: title.length, textLength: text.length });
 
       document.getElementById("simplifyBtn").disabled = true;
       setAiStatus("Talking to OpenAI…", false);
 
       try {
-        const systemPrompt =
-          "You are simplifying an AV job/event description for an engineer who will read it quickly on their phone.
+        const systemPrompt = `You are simplifying an AV job/event description for an engineer who will read it quickly on their phone.
 
-" +
-          "GOAL:
-" +
-          "- Rewrite the description so it is shorter, clearer and easier to scan.
-" +
-          "- KEEP all important factual details: locations, building names, dates, key constraints, key people, kit names,
-" +
-          "  special requirements, access instructions, and any unusual caveats.
-" +
-          "- Remove waffle, repetition, and internal admin noise that doesn’t help someone understand what they’re doing that day.
+GOAL:
+- Rewrite the description so it is shorter, clearer and easier to scan.
+- KEEP all important factual details: locations, building names, dates, key constraints, key people, kit names,
+  special requirements, access instructions, and any unusual caveats.
+- Remove waffle, repetition, and internal admin noise that doesn’t help someone understand what they’re doing that day.
 
-" +
-          "Rules:
-" +
-          "- Do NOT invent anything that is not clearly implied by the original text.
-" +
-          "- Do NOT drop important instructions just because they sound boring.
-" +
-          "- It’s fine to reorder information to improve clarity.
-" +
-          "- The output should be suitable for dropping straight into the calendar description.
+Rules:
+- Do NOT invent anything that is not clearly implied by the original text.
+- Do NOT drop important instructions just because they sound boring.
+- It’s fine to reorder information to improve clarity.
+- The output should be suitable for dropping straight into the calendar description.
 
-" +
-          "Output:
-" +
-          "- 1–3 short paragraphs and/or a few bullet points.
-" +
-          "- Do NOT add labels like 'Summary:' – just the cleaned-up text.";
+Output:
+- 1–3 short paragraphs and/or a few bullet points.
+- Do NOT add labels like 'Summary:' – just the cleaned-up text.`;
 
         const result = await callOpenAIWithFallback(systemPrompt, combined);
 
@@ -928,6 +921,9 @@ Details:
       }
     }
 
+    // -------------------------
+    // Copy full index.html
+    // -------------------------
     async function getIndexHtmlSource() {
       const request = new Request("index.html", { cache: "no-cache" });
       try {
@@ -937,9 +933,9 @@ Details:
       } catch (e) {
         const dt = document.doctype;
         const doctype = dt
-          ? "<!DOCTYPE " + dt.name + (dt.publicId ? " PUBLIC \"" + dt.publicId + "\"" : "") +
-            (dt.systemId ? " \"" + dt.systemId + "\"" : "") + ">\n"
-          : "<!DOCTYPE html>\n";
+          ? "<!DOCTYPE " + dt.name + (dt.publicId ? " PUBLIC \\"" + dt.publicId + "\\"" : "") +
+            (dt.systemId ? " \\"" + dt.systemId + "\\"" : "") + ">\\n"
+          : "<!DOCTYPE html>\\n";
         return doctype + document.documentElement.outerHTML;
       }
     }
@@ -959,32 +955,13 @@ Details:
         alert("Full index.html copied to clipboard.");
         return;
       } catch (e) {
-        const helper = document.createElement("textarea");
-        helper.value = htmlString;
-        helper.setAttribute("aria-hidden", "true");
-        helper.setAttribute("readonly", "true");
-        helper.style.position = "fixed";
-        helper.style.left = "-9999px";
-        helper.style.top = "0";
-        helper.style.opacity = "0";
-        helper.style.pointerEvents = "none";
-        document.body.appendChild(helper);
-
-        let fallbackSuccess = false;
-        try {
-          helper.focus({ preventScroll: true });
-          helper.select();
-          helper.setSelectionRange(0, helper.value.length);
-          fallbackSuccess = !!(document.execCommand && document.execCommand("copy"));
-        } finally {
-          document.body.removeChild(helper);
-        }
-
-        if (fallbackSuccess) { alert("Full index.html copied to clipboard."); return; }
         alert("Could not copy the full page automatically. You may need to copy manually.");
       }
     }
 
+    // -------------------------
+    // API key storage
+    // -------------------------
     function loadStoredApiKey() {
       const key = localStorage.getItem(OPENAI_KEY_STORAGE);
       const input = document.getElementById("apiKeyInput");
@@ -1012,8 +989,10 @@ Details:
       setApiKeyStatus("API key cleared from local storage.", false);
     }
 
-    window.addEventListener("DOMContentLoaded", () => {
-
+    // -------------------------
+    // Init
+    // -------------------------
+    window.addEventListener("DOMContentLoaded", async () => {
       // Shared invariant: details panels closed by default on refresh
       document.querySelectorAll("details").forEach(d => { d.open = false; });
 
@@ -1039,10 +1018,12 @@ Details:
       });
 
       setStatus("Waiting for sign-in…", false);
-      debugLog("Page loaded, initialising auth soon…");
+      debugLog("Page loaded.");
       loadStoredApiKey();
       setDefaultDateRangeInputs();
-      setTimeout(() => { try { initAuth(); } catch(e){ debugLog("initAuth threw", { error: e.message || String(e) }); } }, 0);
+
+      // Try to prep auth as soon as the async script is ready (without breaking click-to-sign-in)
+      ensureAuthReady().then(ok => debugLog("Auth ready: " + ok));
     });
   </script>
 </body>
